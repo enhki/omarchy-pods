@@ -696,6 +696,19 @@ public slots:
         m_bleManager->stopScan();
     }
 
+    // No BLE discovery while the AirPods are disconnected, unless asked for. The
+    // endless LE scan (setLowEnergyDiscoveryTimeout(0)) holds the controller in an
+    // active scan from a random address, which drops the directed advertising a
+    // sleeping BLE mouse or keyboard reconnects with: an MX Master 4 needed
+    // re-pairing after every idle. It only fed case battery, lid and ear state
+    // while disconnected. bluetooth/scanWhileDisconnected=true brings it back.
+    void startBleScanIfWanted()
+    {
+        if (!m_settings->value("bluetooth/scanWhileDisconnected", false).toBool())
+            return;
+        m_bleManager->startScan();
+    }
+
     void onSystemGoingToSleep()
     {
         m_isSuspending = true;
@@ -718,7 +731,7 @@ public slots:
         // don't surface as user-visible "AirPods Disconnected" toasts.
         QTimer::singleShot(2000, this, [this]() {
             // Suspend stopped discovery on every controller, so resume restarts it and the gate below re-applies.
-            m_bleManager->startScan();
+            startBleScanIfWanted();
 
             if (areAirpodsConnected() && m_deviceInfo && !m_deviceInfo->bluetoothAddress().isEmpty())
             {
@@ -859,7 +872,7 @@ private slots:
 
         // Clear the device name and model
         m_deviceInfo->reset();
-        m_bleManager->startScan();
+        startBleScanIfWanted();
         emit airPodsStatusChanged();
 
         // Skip the disconnect toast if we're suspending/resuming — BlueZ
@@ -1595,7 +1608,7 @@ public:
 
         m_deviceInfo->loadFromSettings(*m_settings);
         // Unreachable with the pods already connected: the constructor returns before this.
-        m_bleManager->startScan();
+        startBleScanIfWanted();
     }
 
     // Null engine is the headless run, where there is no window to open and nothing to say about it.
