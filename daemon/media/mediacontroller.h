@@ -53,6 +53,8 @@ public:
 
 Q_SIGNALS:
   void mediaStateChanged(MediaState state);
+  // The link is up but no bluez5 card arrived: the pods opened control channels and no AVDTP.
+  void audioLinkMissing(const QString &macAddress);
 
 private:
   MediaState mediaStateFromPlayerctlOutput(const QString &output) const;
@@ -75,6 +77,7 @@ private:
   // A queued retry compares its captured generation against this, so a superseded chain stops.
   quint64 m_a2dpRetryGeneration = 0;
   bool m_wirePlumberRestartedThisChain = false;
+  bool m_audioLinkRequestedThisChain = false;
 };
 
 #endif // MEDIACONTROLLER_H

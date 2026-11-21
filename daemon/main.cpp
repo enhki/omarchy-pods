@@ -116,6 +116,8 @@ public:
         connect(monitor, &BluetoothMonitor::deviceDisconnected, this, &AirPodsTrayApp::bluezDeviceDisconnected);
         connect(monitor, &BluetoothMonitor::deviceConnectionProbeFinished,
                 this, &AirPodsTrayApp::controlConnectionProbeFinished);
+        connect(mediaController, &MediaController::audioLinkMissing,
+                monitor, &BluetoothMonitor::connectAudioProfile);
 
         // The control socket can drop while BlueZ keeps A2DP up, so Device1::Connected never rises again.
         m_controlReconnectTimer = new QTimer(this);

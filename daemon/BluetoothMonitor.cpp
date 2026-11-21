@@ -161,6 +161,56 @@ void BluetoothMonitor::probeDeviceConnected(const QString &macAddress, quint64 r
             });
 }
 
+void BluetoothMonitor::connectAudioProfile(const QString &macAddress)
+{
+    if (macAddress.isEmpty() || !m_dbus.isConnected()) return;
+
+    QDBusInterface objectManager("org.bluez", "/", "org.freedesktop.DBus.ObjectManager", m_dbus);
+    auto *lookup = new QDBusPendingCallWatcher(objectManager.asyncCall("GetManagedObjects"), this);
+    connect(lookup, &QDBusPendingCallWatcher::finished, this,
+            [this, lookup, macAddress](QDBusPendingCallWatcher *) {
+                lookup->deleteLater();
+                const QDBusMessage reply = lookup->reply();
+                if (reply.type() == QDBusMessage::ErrorMessage || reply.arguments().isEmpty()) {
+                    LOG_WARN("Failed to look up " << macAddress << " for A2DP: " << reply.errorMessage());
+                    return;
+                }
+                const QDBusArgument arg = reply.arguments().constFirst().value<QDBusArgument>();
+                ManagedObjectList managedObjects;
+                arg >> managedObjects;
+
+                QString devicePath;
+                for (auto it = managedObjects.constBegin(); it != managedObjects.constEnd(); ++it) {
+                    const QVariantMap deviceProps = it.value().value("org.bluez.Device1");
+                    if (deviceProps.value("Address").toString().compare(macAddress, Qt::CaseInsensitive) == 0) {
+                        devicePath = it.key().path();
+                        break;
+                    }
+                }
+                if (devicePath.isEmpty()) {
+                    LOG_WARN("BlueZ has no device " << macAddress << ", cannot connect A2DP");
+                    return;
+                }
+
+                // ConnectProfile returns once AVDTP is up, which takes seconds, so never block on it.
+                QDBusMessage request = QDBusMessage::createMethodCall(
+                    "org.bluez", devicePath, "org.bluez.Device1", "ConnectProfile");
+                request << QStringLiteral("0000110b-0000-1000-8000-00805f9b34fb");
+                auto *call = new QDBusPendingCallWatcher(m_dbus.asyncCall(request), this);
+                connect(call, &QDBusPendingCallWatcher::finished, this,
+                        [call, macAddress](QDBusPendingCallWatcher *) {
+                            call->deleteLater();
+                            const QDBusMessage result = call->reply();
+                            if (result.type() == QDBusMessage::ErrorMessage) {
+                                LOG_WARN("A2DP connect for " << macAddress << " failed: "
+                                         << result.errorName() << " " << result.errorMessage());
+                            } else {
+                                LOG_INFO("A2DP connected for " << macAddress);
+                            }
+                        });
+            });
+}
+
 void BluetoothMonitor::onPropertiesChanged(const QDBusMessage &message)
 {
     // Filter at the path level: only BlueZ Device1 objects, never the

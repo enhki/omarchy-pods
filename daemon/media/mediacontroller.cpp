@@ -303,6 +303,7 @@ void MediaController::activateA2dpProfileWithRetry(const QString &macAddress) {
   // A fresh generation supersedes any chain still in flight, so only the newest request acts.
   const quint64 generation = ++m_a2dpRetryGeneration;
   m_wirePlumberRestartedThisChain = false;
+  m_audioLinkRequestedThisChain = false;
   attemptA2dpActivation(macAddress, generation, 0);
 }
 
@@ -311,8 +312,10 @@ void MediaController::cancelPendingA2dpActivation() {
 }
 
 void MediaController::attemptA2dpActivation(const QString &macAddress, quint64 generation, int attempt, int unanswered) {
-  static constexpr int kMaxAttempts = 6;
+  // Ten attempts leave the card time to arrive after the A2DP request at attempt three.
+  static constexpr int kMaxAttempts = 10;
   static constexpr int kDelayMs = 1500;
+  static constexpr int kAudioLinkAttempt = 2;
   static constexpr int kCaptureRecheckMs = 10000;
   static constexpr int kMaxUnansweredChecks = 6;
 
@@ -342,6 +345,16 @@ void MediaController::attemptA2dpActivation(const QString &macAddress, quint64 g
   if (activateA2dpProfile()) {
     LOG_INFO("A2DP profile activated (attempt " << (attempt + 1) << ")");
     return;
+  }
+
+  // AirPods sometimes reconnect with SDP, AAP and AVRCP only and leave AVDTP to the host,
+  // so no card ever appears to activate. Ask BlueZ for A2DP once, as a manual connect does.
+  if (m_deviceOutputName.isEmpty() && attempt >= kAudioLinkAttempt && !m_audioLinkRequestedThisChain) {
+    m_audioLinkRequestedThisChain = true;
+    QString address = macAddress;
+    address.replace('_', ':');
+    LOG_INFO("No audio card " << (attempt + 1) << " attempts in, asking BlueZ to connect A2DP");
+    emit audioLinkMissing(address);
   }
 
   if (attempt + 1 >= kMaxAttempts) {
